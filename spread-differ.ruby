@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 require "google_drive"
-
+require 'colorize'
 
 
 class Document
@@ -31,6 +31,24 @@ class Term
     @keyword.downcase == '[comment]'
   end
 
+end
+
+class Diff
+  
+  attr_accessor :keyword, :language, :old_value, :new_value
+  
+  def initialize(keyword,language,old_val,new_val)
+    @keyword = keyword
+    @language = language
+    @old_value = old_val
+    @new_value = new_val
+  end
+  
+  def log
+    puts "#{@language.upcase}: #{keyword}".light_red
+    puts @old_value + " >> " + @new_value
+    puts 
+  end
 end
 
 class Processor
@@ -102,7 +120,7 @@ class Processor
 end
 
 def log_document_data(document) 
-  puts "\# #{document.title}"
+  puts document.title.yellow
   puts "Modified: #{document.modified}"
   puts "Languages: #{document.languages}"
   puts "Keywords: #{document.keywords}"
@@ -173,8 +191,7 @@ session = GoogleDrive::Session.from_config("config.json")
 ##########################
 
 # 1. Check documents are there
-
-
+puts "1. Check documents are there".green
 
 original_file = session.spreadsheet_by_title(original_filename)
 new_file = session.spreadsheet_by_title(new_filename)
@@ -186,6 +203,7 @@ raise 'New file missing' if new_file.nil?
 
 
 # 2. Log documents data
+puts "2. Log documents data".green
 
 doc_original = Processor.loadDocument(original_file)
 log_document_data(doc_original)
@@ -196,10 +214,42 @@ doc_new = Processor.loadDocument(new_file)
 log_document_data(doc_new)
  
 puts ""
- 
+puts "3. Check rows and columns".green
+# 3. Check rows and columns
+# - all columns are there
+#TODO
+# - new columns have been added
+#TODO
+# - all keys are there
 raise IndexError, 'New document must be missing some keys' if doc_new.keywords.count < doc_original.keywords.count
+# - display extra keys
  
 if doc_new.keywords.count > doc_original.keywords.count
-  puts "new keys: #{ doc_new.keywords - doc_original.keywords }"
+  puts "new keys: #{ doc_new.keywords - doc_original.keywords }".yellow
 end
+puts " "
+
+# 4. Check cell per cell modifications
+# puts doc_original.terms.count
+puts "4. Check cell per cell modifications".green
+diffs = []
+
+doc_original.terms.each do |term|
+  term.values.each_pair do |lang,content|
+    #puts lang
+    #puts content 
+    keyword = term.keyword
+    new_term = doc_new.terms.select { |term| term.keyword == keyword }
+    new_content = new_term[0].values[lang]
+    if content != new_content
+      diff = Diff.new(keyword,lang,content,new_content)
+      diffs << diff
+    end
+  end
+end
+
+diffs.each do |diff|
+  diff.log
+end
+
 
