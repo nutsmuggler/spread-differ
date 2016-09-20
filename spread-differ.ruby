@@ -25,7 +25,9 @@ class Document
   @languages = nil
   @terms = nil
   @keywords = nil
-  attr_accessor :title, :modified, :languages 
+  @warnings = nil
+  
+  attr_accessor :title, :modified, :languages, :warnings
   attr_reader :terms, :keywords
   
   def terms=(terms)
@@ -61,10 +63,21 @@ class Diff
   end
   
   def log
-    puts "#{@language.upcase}: #{keyword}".light_red
+    puts "#{@language.upcase}: #{keyword}"
     puts @old_value + " >> " + @new_value
     puts 
   end
+end
+
+class Warning
+
+  attr_accessor :keyword, :language
+
+  def initialize(keyword,language)
+    @keyword = keyword
+    @language = language
+  end
+
 end
 
 class Processor
@@ -113,6 +126,7 @@ class Processor
     #puts 'Building terminology in memory...'
 
     terms = []
+    warnings = []
     first_term_row = first_valid_row_index+1
     last_term_row = last_valid_row_index-1
 
@@ -123,12 +137,17 @@ class Processor
         languages.each do |lang, column_index|
           term_text = worksheet[row, column_index]
           term.values.store lang, term_text
+          if term_text == '' 
+            warning = Warning.new(key,lang)
+            warnings << warning
+          end
         end
         terms << term
       end
     end
     
     doc.terms = terms
+    doc.warnings = warnings
     
     doc
     
@@ -142,21 +161,103 @@ def log_document_data(document)
   #puts "Keywords: #{document.keywords}"
 end
 
+########################
 
-# 0. Parse Options
+# 0. Parse Arguments
+
 if ARGV.count < 1
   puts 'Source filename missing'.red 
   exit
 end 
 
-
-
-
 original_filename = ARGV[0]
 new_filename = "CANDY_#{original_filename}"
+
+# 1. Check documents are there
+puts "1. Check documents are there".cyan
+
+session = GoogleDrive::Session.from_config("config.json")
+original_file = session.spreadsheet_by_title(original_filename)
+new_file = session.spreadsheet_by_title(new_filename)
+
+
+raise 'Original file missing' if original_file.nil?
+
+raise 'New file missing' if new_file.nil?
+
+puts "✔︎".light_green
+
+# 2. Log documents data
+puts "2. Log documents data".cyan
+
+doc_original = Processor.loadDocument(original_file)
+log_document_data(doc_original)
+
+doc_new = Processor.loadDocument(new_file)
+log_document_data(doc_new)
+puts "✔︎".light_green
+
+ 
+puts ""
+puts "3. Check rows and columns".cyan
+# 3. Check rows and columns
+# - all columns are there
+#TODO
+# - new columns have been added
+#TODO
+# - all keys are there
+raise IndexError, 'New document must be missing some keys' if doc_new.keywords.count < doc_original.keywords.count
+# - display extra keys
+ 
+if doc_new.keywords.count > doc_original.keywords.count
+  puts "new keys: #{ doc_new.keywords - doc_original.keywords }".yellow
+end
+puts "✔︎".light_green
+puts " "
+
+# 4. Check cell per cell modifications
+# puts doc_original.terms.count
+puts "4. Check cell per cell modifications".cyan
+diffs = []
+
+doc_original.terms.each do |term|
+  term.values.each_pair do |lang,content|
+    #puts lang
+    #puts content 
+    keyword = term.keyword
+    new_term = doc_new.terms.select { |term| term.keyword == keyword }
+    new_content = new_term[0].values[lang]
+    if content != new_content
+      diff = Diff.new(keyword,lang,content,new_content)
+      diffs << diff
+    end
+  end
+end
+
+if diffs.count > 0
+  puts "Differences ".light_red
+  diffs.each do |diff|
+    diff.log
+  end
+else
+  puts "No modifications".light_red
+end
+
+if doc_new.warnings.count > 0 
+  puts "Warnings".light_red
+  doc_new.warnings.each do |warning|
+    puts "#{warning.language}: #{warning.keyword}"
+  end
+end
+
+
+
+
+
+
+
 # Creates a session. This will prompt the credential via command line for the
 # first time and save it to config.json file for later usages.
-session = GoogleDrive::Session.from_config("config.json")
 
 # First worksheet of
 # https://docs.google.com/spreadsheet/ccc?key=pz7XtlQC-PYx-jrVMJErTcg
@@ -196,92 +297,3 @@ session = GoogleDrive::Session.from_config("config.json")
 
 # Reloads the worksheet to get changes by other clients.
 #ntn.reload
-
-########################
-
-
-# 1. Check documents are there
-
-# 2. Log documents data
-# - file name
-# - modified at
-
-# 3. Check rows and columns
-# - all columns are there
-# - new columns have been added
-# - all keys are there
-# - display extra keys
-
-# 4. Check cell per cell modifications
-
-##########################
-
-# 1. Check documents are there
-puts "1. Check documents are there".green
-
-original_file = session.spreadsheet_by_title(original_filename)
-new_file = session.spreadsheet_by_title(new_filename)
-
-
-raise 'Original file missing' if original_file.nil?
-
-raise 'New file missing' if new_file.nil?
-
-puts "✔︎".light_green
-
-# 2. Log documents data
-puts "2. Log documents data".green
-
-doc_original = Processor.loadDocument(original_file)
-log_document_data(doc_original)
-
-puts ""
-
-doc_new = Processor.loadDocument(new_file)
-log_document_data(doc_new)
- 
-puts ""
-puts "3. Check rows and columns".green
-# 3. Check rows and columns
-# - all columns are there
-#TODO
-# - new columns have been added
-#TODO
-# - all keys are there
-raise IndexError, 'New document must be missing some keys' if doc_new.keywords.count < doc_original.keywords.count
-# - display extra keys
- 
-if doc_new.keywords.count > doc_original.keywords.count
-  puts "new keys: #{ doc_new.keywords - doc_original.keywords }".yellow
-end
-puts "✔︎".light_green
-puts " "
-
-# 4. Check cell per cell modifications
-# puts doc_original.terms.count
-puts "4. Check cell per cell modifications".green
-diffs = []
-
-doc_original.terms.each do |term|
-  term.values.each_pair do |lang,content|
-    #puts lang
-    #puts content 
-    keyword = term.keyword
-    new_term = doc_new.terms.select { |term| term.keyword == keyword }
-    new_content = new_term[0].values[lang]
-    if content != new_content
-      diff = Diff.new(keyword,lang,content,new_content)
-      diffs << diff
-    end
-  end
-end
-
-if diffs.count > 0
-  puts "Differences ".yellow
-  diffs.each do |diff|
-    diff.log
-  end
-else
-  puts "No modifications".yellow
-end
-
