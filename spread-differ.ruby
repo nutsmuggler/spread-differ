@@ -1,6 +1,22 @@
 #!/usr/bin/env ruby
 require "google_drive"
 require 'colorize'
+require 'optparse'
+
+options = {}
+OptionParser.new do |opts|
+  opts.banner = "Usage: example.rb [options]"
+
+  opts.on("-v", "--[no-]verbose", "Run verbosely") do |v|
+    options[:verbose] = v
+  end
+  
+  opts.on("-h", "--help", "Prints this help") do
+    puts opts
+    exit
+  end
+        
+end.parse!
 
 
 class Document
@@ -102,7 +118,7 @@ class Processor
 
     for row in first_term_row..last_term_row
       key = worksheet[row, 1]
-      unless key.to_s == ''
+      unless (key.to_s == '' || key.to_s == '[comment]')
         term = Term.new(key)
         languages.each do |lang, column_index|
           term_text = worksheet[row, column_index]
@@ -123,10 +139,20 @@ def log_document_data(document)
   puts document.title.yellow
   puts "Modified: #{document.modified}"
   puts "Languages: #{document.languages}"
-  puts "Keywords: #{document.keywords}"
+  #puts "Keywords: #{document.keywords}"
 end
 
-original_filename = "Basic Words"
+
+# 0. Parse Options
+if ARGV.count < 1
+  puts 'Source filename missing'.red 
+  exit
+end 
+
+
+
+
+original_filename = ARGV[0]
 new_filename = "CANDY_#{original_filename}"
 # Creates a session. This will prompt the credential via command line for the
 # first time and save it to config.json file for later usages.
@@ -201,6 +227,7 @@ raise 'Original file missing' if original_file.nil?
 
 raise 'New file missing' if new_file.nil?
 
+puts "✔︎".light_green
 
 # 2. Log documents data
 puts "2. Log documents data".green
@@ -227,6 +254,7 @@ raise IndexError, 'New document must be missing some keys' if doc_new.keywords.c
 if doc_new.keywords.count > doc_original.keywords.count
   puts "new keys: #{ doc_new.keywords - doc_original.keywords }".yellow
 end
+puts "✔︎".light_green
 puts " "
 
 # 4. Check cell per cell modifications
@@ -248,8 +276,12 @@ doc_original.terms.each do |term|
   end
 end
 
-diffs.each do |diff|
-  diff.log
+if diffs.count > 0
+  puts "Differences ".yellow
+  diffs.each do |diff|
+    diff.log
+  end
+else
+  puts "No modifications".yellow
 end
-
 
